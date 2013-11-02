@@ -12,7 +12,7 @@ use constant DEBUG =>   # not used ...
 use Data::Dumper;
 $Data::Dumper::Indent = $Data::Dumper::Sortkeys = 1;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 #has [qw(auto_escape)];
 has [qw(code include_file)] => '';
@@ -398,7 +398,6 @@ sub _mojoparams_to_phpparams {
 	    }
 	}
     }
-    delete $new_params->{ MojoX::Plugin::PHP->_php_template_pname };
     return $new_params;
 }
 
@@ -487,7 +486,7 @@ MojoX::Template::PHP - PHP processing engine for MojoX::Plugin::PHP
 
 =head1 VERSION
 
-0.01
+0.02
 
 =head1 SYNOPSIS
 

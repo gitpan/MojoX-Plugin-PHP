@@ -8,36 +8,25 @@ use Data::Dumper;
 $Data::Dumper::Indent = 1;
 $Data::Dumper::Sortkeys = 1;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 my $php_req_handler_path = sprintf "/php-handler-%07x", 0x10000000 * rand();
-my $php_template_pname = sprintf "template_%07x", 0x10000000 * rand();
-
-sub _php_template_pname { return $php_template_pname; }
-sub _php_req_handler_path { return $php_req_handler_path; }
 
 sub register {
     my ($self, $app, $config) = @_;
-
-    $app->config( 'MojoX::Template::PHP' => $config );
+    $app->config( 'MojoX::Template::PHP' => $config,
+		  'MojoX::Plugin::PHP'   => $config );
     $app->types->type( php => "application/x-php" );
     $app->renderer->add_handler( php => \&_php );
-
-    my $t = "/*" . $php_template_pname;
-    for my $i (1 .. 10) {
-	$app->routes->any( $php_req_handler_path . $t, \&_php_controller );
-	$t = "/*" . $php_template_pname . "_$i" . $t;
-    }
-
-    $app->routes->any( $php_req_handler_path ."/*" . $php_template_pname,
-		       \&_php_controller );
+    $app->routes->any( $php_req_handler_path, \&_php_controller );
     $app->hook( before_dispatch => \&_before_dispatch_hook );
 }
 
 sub _rewrite_req_for_php_handler {
     my ($c, $path_to_restore, $path_to_request) = @_;
     $c->req->{__old_path} = $path_to_restore;
-    $c->req->url->path( $php_req_handler_path . $path_to_request );
-#    print STDERR "rewrite req $path_to_restore => $php_req_handler_path.$path_to_request\n";
+    $c->req->{__php_restore} = { path => $path_to_restore,
+				 template => $path_to_request };
+    $c->req->url->path( $php_req_handler_path );
 }
 
 sub _path_contains_index_php {
@@ -55,32 +44,30 @@ sub _path_contains_index_php {
 sub _before_dispatch_hook {
     my $c = shift;
     my $old_path = $c->req->url->path->to_string;
+$DB::single
+ =1;
     if ($old_path =~ /\.php$/) {
-	_rewrite_req_for_php_handler( $c, $old_path, $old_path );
-    } elsif ($old_path =~ m{/$}) {
-	if (_path_contains_index_php($old_path, $c)) {
-	    _rewrite_req_for_php_handler($c, $old_path, $old_path.'index.php');
-	}
+	_rewrite_req_for_php_handler( $c, $old_path, substr($old_path,1) );
     } else {
-	if (_path_contains_index_php($old_path, $c)) {
-	    _rewrite_req_for_php_handler($c,$old_path,$old_path.'/index.php');
+	my $use_index_php =
+	    $c->app->config->{'MojoX::Plugin::PHP'}{use_index_php};
+	if ($old_path =~ m{/$}) {
+	    if (defined $use_index_php && 
+		    _path_contains_index_php($old_path,$c)) {
+		_rewrite_req_for_php_handler($c, $old_path, 
+					     substr($old_path,1).'index.php');
+	    }
+	} elsif ($use_index_php && _path_contains_index_php($old_path,$c)) {
+	    _rewrite_req_for_php_handler($c,$old_path,
+					 substr($old_path,1).'/index.php');
 	}
     }
 }
 
 sub _php_controller {
     my $self = shift;
-    my $template = $self->param( $php_template_pname );
-    # it feels a little dirty to touch the mojo.captures stash
-    delete $self->stash('mojo.captures')->{ $php_template_pname };
-    for my $i (1 .. 9) {
-	my $dir = $self->param( $php_template_pname . "_$i" );
-	last unless $dir;
-	$template = "$dir/$template";
-	delete $self->stash('mojo.captures')->{ $php_template_pname . "_$i" };
-    }
-
-    $self->req->url->path( $self->req->{__old_path} );
+    $self->req->url->path( $self->req->{__php_restore}{path} );
+    my $template = $self->req->{__php_restore}{template};
     $self->render( template => $template, handler => 'php' );
 }
 
@@ -115,7 +102,6 @@ sub _php {
 
     # the PHP script should declare its own encoding in a Content-type header
     delete $options->{encoding};
-
     my $inline = $options->{inline};
     my $path = _template_path($renderer, $c, $options);
 
@@ -165,12 +151,11 @@ sub _php {
 
 =head1 NAME
 
-MojoX::Plugin::PHP - use PHP as a templating system in your
-Mojolicious application!
+MojoX::Plugin::PHP - use PHP as a templating system in Mojolicious
 
 =head1 VERSION
 
-0.01
+0.02
 
 =head1 WTF
 
@@ -230,6 +215,33 @@ which appserver your project should use
 =back
 
 =head1 CONFIG
+
+=over 4
+
+=item use_index_php
+
+    use_index_php => boolean | undef
+
+Describes how the before_dispatch hook should handle requests
+for a path that contains a file called C<index.php>. 
+
+If C<use_index_php> is set to a defined value, then a request like
+C</foo/> (with a trailing slash) will be routed to
+C</foo/index.php> if C</foo/index.php> would resolve to a valid
+PHP template.
+
+If C<use_index_php> is set to a true value, then a request like
+C</foo> (with or without a trailing slash) will be routed to
+C</foo/index.php> if C</foo/index.php> would resolve to a valid
+PHP template.
+
+If C<use_index_php> is not defined or set to C<undef>, then
+this module will not look for an C<index.php> file related
+to any request.
+
+=back
+
+=head2 Callbacks during PHP processing
 
 There are four hooks in the PHP template processing engine
 (L<MojoX::Template::PHP>) where you can customize or extend 
