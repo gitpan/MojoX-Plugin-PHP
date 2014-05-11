@@ -8,7 +8,7 @@ use Data::Dumper;
 $Data::Dumper::Indent = 1;
 $Data::Dumper::Sortkeys = 1;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 my $php_req_handler_path = sprintf "/php-handler-%07x", 0x10000000 * rand();
 
 sub register {
@@ -44,8 +44,6 @@ sub _path_contains_index_php {
 sub _before_dispatch_hook {
     my $c = shift;
     my $old_path = $c->req->url->path->to_string;
-$DB::single
- =1;
     if ($old_path =~ /\.php$/) {
 	_rewrite_req_for_php_handler( $c, $old_path, substr($old_path,1) );
     } else {
@@ -141,7 +139,6 @@ sub _php {
 	    return undef;
 	}
     }
-
     return ref $$output ? die $$output : 1;
 }
 
@@ -155,7 +152,7 @@ MojoX::Plugin::PHP - use PHP as a templating system in Mojolicious
 
 =head1 VERSION
 
-0.02
+0.03
 
 =head1 WTF
 
